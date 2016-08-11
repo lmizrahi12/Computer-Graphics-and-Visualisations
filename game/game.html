@@ -1,0 +1,859 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Style-Type" content="text/css" /> 
+    <title>Game</title>
+    <link href="/library/skin/tool_base.css" type="text/css" rel="stylesheet" media="all" />
+    <link href="/library/skin/default/tool.css" type="text/css" rel="stylesheet" media="all" />
+    <script type="text/javascript" language="JavaScript" src="/library/js/headscripts.js"></script>
+    <style>
+			body { 
+				padding: 5px !important; 
+				background-color: white;
+			}</style>
+  </head>
+  <body>
+<!DOCTYPE html>
+<head>
+<meta charset="UTF-8">
+<title>Game</title>
+<script src="three.js"></script>
+<script src="optimer_regular.typeface.js"></script>
+<script src="keyboard.js"></script>
+<script src="DAT.GUI.min.js"></script>
+<script src="OrbitControls.js"></script>
+<script src="heartcode-canvasloader-min.js"></script>
+<script>
+
+"use strict";
+
+//........................................
+//                                       .
+//-----------GLOBAL VARIABLES----------------------------------------------------------------------------------
+//                                       .
+//........................................
+	var canvas, renderer, scene, camera;
+	var mirrorCubeCameraPlayer; //Used for reflective paddles
+	var mirrorCubeCameraOpp;
+	var pointLight;		  
+	var spotLight;
+	var ballSpotight;
+	var controls;
+	var texture;
+	var gui;
+	var canvasLoader;
+	var clock = new THREE.Clock();
+
+	//Table variables
+	var tableLength = 400;
+	var tableWidth = 200;
+	var tableHeight = 50;
+
+	//Paddle variables
+	var playerPaddle;
+	var oppPaddle;
+	var paddleWidth;
+	var paddleLength;
+	var paddleHeight;
+	var playerPaddleDirY = 0;
+	var playerPaddleDirZ = 0;
+	var oppPaddleDirY = 0;
+	var oppPaddleDirZ = 0;
+	var paddleSpeed = 2;
+
+	//Ball variables
+	var ballRadius = 5;
+	var texBall;
+	var ball;
+	var ballDirX = -1; //Speed of ball in X direction.
+	var ballDirY = -1; //Speed of ball in Y direction.
+	var ballDirZ = -1; //Speed of ball in Z direction.
+	var ballSpeed = 1.5; //Speed of ball
+	var prevXPosition;
+	var prevYPosition;
+	
+	//Game variables
+	var playerScore = 0;
+	var oppScore = 0;
+	var oldplayerScore; //Used to detect a change in score
+	var oldoppScore;
+	var playerScoreBoard; //Hold the TextGeometry for the player's score
+	var oppScoreBoard;
+	var Hyphen; //Hyphen between the scores
+	var winScore = 2; 
+	var isPaused = false;
+
+	//Difficulty between 0-1.Reaction time of opp paddle
+	var difficulty = 0.2;
+	
+	//Scoreboard Text options
+	var options = {
+	  size: 35,
+	  height: 2,
+	  weight: 'normal',
+	  font: 'optimer',
+	  curveSegments: 10
+	};
+	
+	//SkyBox variables. Each texture is cycled through the GUI
+	var texRedSky = [];
+	var texInterstellar = []
+	var texStorm = [];
+	var skybox;
+	var skyMaterial; //Stores the materials
+	var materialArray; //Stores the textures and material of each face
+	var skyBoxNumber = 1;
+	var redsky = "skybox/RedSky/";
+	var interstellar = "skybox/Interstellar/";
+	var storm = "skybox/Stormydays/";
+
+//-------------------------------------------------------------------------------------------------------------------
+	
+	
+	
+	
+	
+/**
+ *  The render function draws the scene.
+ */
+function render() {
+    renderer.render(scene, camera);
+}
+
+
+/**
+ * This function is called by the init() method to create the world. 
+ */
+function createWorld() {
+	canvasLoader.kill();
+    
+    renderer.setClearColor("black"); // Background color for scene.
+    scene = new THREE.Scene();
+    
+    //Make the cameras
+    camera = new THREE.PerspectiveCamera(90, canvas.width/canvas.height, 0.1, 2050);
+    camera.position.z = 30;
+	camera.up.set( 0, 0, 1 );
+    scene.add(camera);
+	
+	mirrorCubeCameraPlayer = new THREE.CubeCamera(1, 8000, 2048);
+	scene.add( mirrorCubeCameraPlayer );
+	
+	mirrorCubeCameraOpp = new THREE.CubeCamera(1, 8000, 2048);
+	scene.add(mirrorCubeCameraOpp);
+	
+	//Setup OrbitControls
+	controls = new THREE.OrbitControls(camera,canvas);
+	controls.noPan = true;
+	controls.minDistance = 30;   //Sets distances for zooming in/out
+	controls.maxDistance = 150;
+	
+	THREE.ImageUtils.crossOrigin = ''; //Needed to do this otherwise getting some weird texture issues
+	
+	//Create materials and add textures for the objects
+	texBall.wrapS = THREE.ClampToEdgeWrapping;
+	texBall.wrapT = THREE.ClampToEdgeWrapping;
+	texBall.repeat.set(1, 1);
+	texture = THREE.ImageUtils.loadTexture( "textures/golf_ball_bmap.jpg");
+	var ballMaterial = new THREE.MeshBasicMaterial(
+		{
+			color: 0xDD00FF,
+			map: texBall,
+			bumpMap: texture,
+			bumpScale: 0.7
+		});
+	ballMaterial.needsUpdate = true;
+		
+	var playerPaddleMaterial = new THREE.MeshPhongMaterial(
+		{
+			color: 0x1B32C0,
+			envMap: mirrorCubeCameraPlayer.renderTarget
+		});
+
+	var oppPaddleMaterial = new THREE.MeshPhongMaterial(
+		{
+			color: 0xFF0000,
+			envMap: mirrorCubeCameraOpp.renderTarget
+		});
+
+	texture = THREE.ImageUtils.loadTexture( "textures/green_cloth.jpg", undefined, render );
+	var tableMaterial = new THREE.MeshBasicMaterial({ map: texture });
+	
+	texture = THREE.ImageUtils.loadTexture( "textures/leather_blue.jpg", undefined, render );
+	var bmap = THREE.ImageUtils.loadTexture( "textures/leather_bump.jpg", undefined, render );
+	texture.wrapS = THREE.RepeatWrapping;
+	texture.wrapT = THREE.RepeatWrapping;
+	texture.repeat.set(1, 1);
+	var tableBorderMaterial = new THREE.MeshPhongMaterial(
+		{
+			color: 0x111111,
+			specular: 0x111111,
+			shininess: 5
+		});
+	tableBorderMaterial.bumpMap = bmap;
+	tableBorderMaterial.bumpScale = 0.8;
+	tableBorderMaterial.map = texture;
+	tableBorderMaterial.needsUpdate = true;
+
+	var floorMaterial = new THREE.MeshPhongMaterial(
+		{
+			color: 0x888888
+		});	
+		
+	var tableLegsMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF });
+	
+	
+	//CREATE THE OBJECTS
+	
+	//Craete the ball
+	var ballRadius = 5;
+	var ballSegments = 30;
+	var ballRings = 30;
+	ball = new THREE.Mesh(
+		new THREE.SphereGeometry(
+			ballRadius,
+			ballSegments,
+			ballRings),
+			ballMaterial);
+	scene.add(ball);
+	ball.receiveShadow = true;
+    ball.castShadow = true;
+	ball.position.x = 0;
+	ball.position.y = 0;
+	ball.position.z = tableHeight/2;
+	
+
+	//Create the table
+	var table = new THREE.Mesh(
+		new THREE.BoxGeometry(
+			tableLength * 0.95,
+			tableWidth,
+			0.5),
+			tableMaterial);
+	scene.add(table);
+	table.receiveShadow = true;
+	
+	//Create table border
+	var tableBorder = new THREE.Mesh(
+		new THREE.BoxGeometry(
+			tableLength * 1.05,
+			tableWidth * 1.05,
+			2),
+			tableBorderMaterial);
+	//Translate the border down by 2 to see the table
+	tableBorder.position.z = -2;
+	scene.add(tableBorder);
+	tableBorder.receiveShadow = true;
+	
+	var leg = new THREE.Mesh(
+		new THREE.BoxGeometry(
+			paddleWidth*3,
+			tableWidth * 1.05,
+			50),
+			tableLegsMaterial);
+	leg.position.set(0,0,0);
+	scene.add(leg);
+	
+		
+	//Create the paddles
+	paddleWidth = 10;
+	paddleLength = 30;
+	paddleHeight = 10;
+
+	playerPaddle = new THREE.Mesh(
+		new THREE.BoxGeometry(
+			paddleWidth,
+			paddleLength,
+			paddleHeight),
+			playerPaddleMaterial);
+	scene.add(playerPaddle);
+	playerPaddle.receiveShadow = true;
+    playerPaddle.castShadow = true;
+
+	oppPaddle = new THREE.Mesh(
+		new THREE.BoxGeometry(
+			paddleWidth,
+			paddleLength,
+			paddleHeight),
+			oppPaddleMaterial);
+	scene.add(oppPaddle);
+	oppPaddle.receiveShadow = true;
+    oppPaddle.castShadow = true;
+	
+
+	playerPaddle.position.x = -tableLength/2 + paddleWidth;
+	oppPaddle.position.x = tableLength/2 - paddleWidth;
+
+	playerPaddle.position.z = paddleHeight;
+	oppPaddle.position.z = paddleHeight;
+	
+	
+	//Create spot light for ball
+	ballSpotight = new THREE.SpotLight(0xEEEEEE);
+	ballSpotight.position.set(0,0,500);
+	ballSpotight.intensity = 3;
+	ballSpotight.castShadow = true;
+	ballSpotight.target = ball;
+	scene.add(ballSpotight);
+	
+	//Create a point light
+	pointLight = new THREE.PointLight(0xFFFFFF);
+	pointLight.position.x = -1000;
+	pointLight.position.y = 0;
+	pointLight.position.z = 1000;
+	pointLight.intensity = 7;
+	pointLight.distance = 10000;
+	scene.add(pointLight);
+
+	renderer.shadowMapEnabled = true;		
+	
+	//Show scores at the bottom of the table border	
+	InitialiseScores();	
+	
+	//Create Skybox
+	materialArray = [];
+	for (var i = 0; i < 6; i++){
+		materialArray.push( new THREE.MeshBasicMaterial({
+			map: texRedSky[i],
+			side: THREE.BackSide
+		}));
+	}
+	skyMaterial = new THREE.MeshFaceMaterial( materialArray );
+	skybox = new THREE.Mesh( new THREE.BoxGeometry( 2048, 2048, 2048 ), skyMaterial );
+	skybox.doubleSided = true;
+	skybox.rotation.x = Math.PI/2;
+	scene.add(skybox);
+	
+	
+	//Initialise GUI
+	gui = new dat.GUI();
+	var folder = gui.addFolder("Options");
+	var gameOptions = {
+		backGround: function() {
+					skyBoxNumber++;
+					if(skyBoxNumber > 3){
+						skyBoxNumber = 1;
+					}
+					UpdateSkyBox();
+				},
+		paused: function() {
+					if(!isPaused){
+						isPaused = true;
+					}
+					else{
+						isPaused = false;
+					}
+				},
+		restart: function() {
+					ball.position.set(0,0,tableHeight/2);
+					ballSpeed = 1.5;
+					ballDirX = -1;
+					ballDirY = -1;
+					ballDirZ = -1;
+					playerPaddle.position.set(-tableLength/2 + paddleWidth, 0, paddleHeight);
+					oppPaddle.position.set(tableLength/2 - paddleWidth, 0, paddleHeight);
+					playerScore = 0;
+					oppScore = 0;
+					scene.remove(oppScoreBoard);
+					scene.remove(playerScoreBoard);
+					UpdateCamera();
+					InitialiseScores();
+				 }
+	};
+	folder.add(gameOptions, "backGround").name("BackGround");
+	folder.add(gameOptions, "paused").name("Pause");
+	folder.add(gameOptions, "restart").name("Restart");
+	folder.close();
+	gui.open();
+	
+	
+	controls.target = playerPaddle.position;
+	UpdateCamera();
+	draw();
+} // end function createWorld()
+
+
+/*  Drives the animation, called by system through requestAnimationFrame() */
+function draw() {
+	renderer.render(scene, camera);
+	requestAnimationFrame(draw);
+	
+	//If the game is not paused then update the scene
+	if(!isPaused){
+		UpdateBall();
+		UpdatePlayerPaddle();
+		UpdateOpponentPaddle();
+		PaddleCollision();
+		controls.update();
+		UpdateReflections();
+		UpdateSkyBox();
+	}
+}
+
+function GameOver(winner){
+	scene.remove(Hyphen);
+	scene.remove(playerScoreBoard);
+	scene.remove(oppScoreBoard);
+	if(winner == 1){
+		UpdatePlayerScore("You Win");
+	}
+	else{
+		UpdateOpponentScore("You Lose");
+	}
+	
+}
+
+
+//Updates the score's TextGeometry below the opp paddle
+function UpdateOpponentScore(score) {
+	//Opp Score
+	var oppScoreText = new THREE.TextGeometry(score, options);
+	oppScoreBoard = new THREE.Mesh(
+		oppScoreText,
+		new THREE.MeshPhongMaterial({color: 0xFF0000})
+	);
+	oppScoreBoard.position.x = 0;
+	oppScoreBoard.position.y = 0;
+	oppScoreBoard.position.z = 0;
+	oppScoreBoard.rotation.y = -Math.PI/2;
+	oppScoreBoard.rotation.x = Math.PI/2;
+	oppScoreBoard.translateX(30);
+	oppScoreBoard.translateY(-38);
+	if(score == "You Lose"){
+		oppScoreBoard.translateX(-120);
+	}
+	oppScoreBoard.translateZ(210);
+	scene.add(oppScoreBoard);
+}
+
+
+//Updates the score's TextGeometry below the player paddle
+function UpdatePlayerScore(score) {
+	var playerScoreText = new THREE.TextGeometry(score, options);
+	playerScoreBoard = new THREE.Mesh(
+		playerScoreText,
+		new THREE.MeshPhongMaterial({color: 0x0000FF})
+	);
+	playerScoreBoard.position.x = 0;
+	playerScoreBoard.position.y = 0;
+	playerScoreBoard.position.z = 0;
+	playerScoreBoard.rotation.y = -Math.PI/2;
+	playerScoreBoard.rotation.x = Math.PI/2;
+	playerScoreBoard.translateX(-70);
+	playerScoreBoard.translateY(-38);
+	
+	//Centres the writing
+	if(score == "You Win"){
+		playerScoreBoard.translateX(-20);
+	}
+	
+	playerScoreBoard.translateZ(210);
+	scene.add(playerScoreBoard);
+}
+
+
+function InitialiseScores() {
+	oldplayerScore = playerScore;
+	oldoppScore = oppScore;
+	
+	UpdatePlayerScore(playerScore);
+	UpdateOpponentScore(oppScore);
+	
+	//Hyphen In Between Scores
+	var HyphenText = new THREE.TextGeometry("-", options);
+	Hyphen = new THREE.Mesh(
+		HyphenText,
+		new THREE.MeshPhongMaterial({
+			color: 0xFFFFFF,
+			shininess: 0
+		})
+	);
+	Hyphen.position.x = 0;
+	Hyphen.position.y = 0;
+	Hyphen.position.z = 0;
+	Hyphen.rotation.y = -Math.PI/2;
+	Hyphen.rotation.x = Math.PI/2;
+	Hyphen.translateX(-10);
+	Hyphen.translateY(-35);
+	Hyphen.translateZ(210);
+	scene.add(Hyphen);
+}
+
+
+//Checks to see whether the ball has hit the paddlesd
+function PaddleCollision() {
+	//Player Paddle
+	//Chaecks if ball is in line with front half of the paddle
+	if (ball.position.x <= playerPaddle.position.x + paddleWidth &&  ball.position.x >= playerPaddle.position.x) {
+		//Checks if ball is within the borders of the paddle
+		if (ball.position.y <= playerPaddle.position.y + paddleLength/2 &&  ball.position.y >= playerPaddle.position.y - paddleLength/2) {
+			//Checks if ball is in line with height of the paddle
+			if(ball.position.z <= playerPaddle.position.z + paddleHeight/2 && ball.position.z >= playerPaddle.position.z - paddleHeight/2){
+				//Checks if ball is going to player
+				if (ballDirX < 0) {
+					ballDirX = -ballDirX;
+					ball.material.color.setHex(0x0000FF);
+					//Adds an angle to the ball's hit to to a bit more interesting
+					ballDirY -= playerPaddleDirY * 0.7;
+					ballDirZ -= playerPaddleDirZ * 0,3;
+				}
+			}
+		}
+	}
+	
+	//Opp Paddle
+	//Exactly the same above except the 3rd 'if' checks if the ball is going to the opponent
+	if (ball.position.x <= oppPaddle.position.x + paddleWidth &&  ball.position.x >= oppPaddle.position.x) {
+		if (ball.position.y <= oppPaddle.position.y + paddleLength/2 &&  ball.position.y >= oppPaddle.position.y - paddleLength/2) {
+			if(ball.position.z <= oppPaddle.position.z + paddleHeight/2 && ball.position.z >= oppPaddle.position.z - paddleHeight/2){
+				if (ballDirX > 0) {
+					ballDirX = -ballDirX;
+					ball.material.color.setHex(0xFF0000);
+					ballDirY -= oppPaddleDirY * 0.7;
+					ballDirZ -= oppPaddleDirZ * 0,3;
+				}
+			}
+		}
+	}
+}
+
+//Updates the opp's paddle's position to follow the ball, relative to the difficulty set
+function UpdateOpponentPaddle() {
+	//Update opp y-position
+	oppPaddleDirY = (ball.position.y - oppPaddle.position.y) * difficulty;
+	if (oppPaddleDirY > paddleSpeed){
+		oppPaddle.position.y += paddleSpeed;
+	}
+	else if (oppPaddleDirY < -paddleSpeed){
+		oppPaddle.position.y -= paddleSpeed;
+	}
+	
+	//Update opp z-position
+	oppPaddleDirZ = (ball.position.z - oppPaddle.position.z) * difficulty;
+	if (oppPaddleDirZ > paddleSpeed){
+		oppPaddle.position.z += paddleSpeed;
+	}
+	else if (oppPaddleDirZ < -paddleSpeed){
+		oppPaddle.position.z -= paddleSpeed;
+	}
+}
+
+//Uses the KeyBoard.js helper to identify if a key is held down
+function UpdatePlayerPaddle() {
+	//Move left
+	if (Key.isDown(Key.A)){
+		if (playerPaddle.position.y < tableWidth * 0.43){
+			playerPaddleDirY = paddleSpeed * 0.5;
+		}
+		else{
+			playerPaddleDirY = 0;
+		}
+	}	
+	//Move right
+	else if (Key.isDown(Key.D)){
+		if (playerPaddle.position.y > -tableWidth * 0.43){
+			playerPaddleDirY = -paddleSpeed * 0.5;
+		}
+		else{
+			playerPaddleDirY = 0;
+		}
+	}
+	else{
+		//Stop the paddle
+		playerPaddleDirY = 0;
+	}
+		
+	playerPaddle.position.y += playerPaddleDirY;
+	
+	//Move down
+	if(Key.isDown(Key.S)){
+		if(playerPaddle.position.z > paddleHeight/2){
+			playerPaddleDirZ = -paddleSpeed * 0.5;
+		}
+		else{
+			playerPaddleDirZ = 0;
+		}
+	}
+	//Move up
+	else if(Key.isDown(Key.W)){
+		if(playerPaddle.position.z < tableHeight){
+			playerPaddleDirZ = paddleSpeed * 0.5;
+		}
+		else{
+			playerPaddleDirZ = 0;
+		}
+	}
+	else{
+		//Stop the paddle
+		playerPaddleDirZ = 0;
+	}
+	playerPaddle.position.z += playerPaddleDirZ;
+}
+
+//Updates the ball's x,y, and z position
+function UpdateBall() {
+	ball.position.x += ballDirX * ballSpeed;
+	ball.position.y += ballDirY * ballSpeed;
+	ball.position.z += ballDirZ * ballSpeed;
+	
+	//Player Scores then ball is reset and the score is checked
+	if(ball.position.x >= tableLength/2){
+		playerScore++;
+		Reset(1);
+		CheckScore();
+	}
+
+	//CPU Scores then ball is reset and the score is checked
+	if(ball.position.x <= -tableLength/2){
+		oppScore++;
+		Reset(2);
+		CheckScore();
+	}
+	
+	if(ball.position.y >= tableWidth/2 || ball.position.y <= -tableWidth/2){
+		ballDirY = -ballDirY;
+	}
+	
+	if(ball.position.z >= tableHeight || ball.position.z <= ballRadius){
+		ballDirZ = -ballDirZ;
+	}
+	
+	//Limit ball's y-speed to 2x the x-speed
+	if (ballDirY > ballSpeed * 2)
+	{
+		ballDirY = ballSpeed * 2;
+	}
+	else if (ballDirY < -ballSpeed * 2)
+	{
+		ballDirY = -ballSpeed * 2;
+	}
+	
+	//Limit ball's z-speed to 1x the x-speed
+	if (ballDirZ > ballSpeed * 1)
+	{
+		ballDirZ = ballSpeed * 1;
+	}
+	else if (ballDirZ < -ballSpeed * 1)
+	{
+		ballDirZ = -ballSpeed * 1;
+	}
+}
+
+//Initialises the camera to the player paddle's position.
+function UpdateCamera() {
+	camera.position.x = playerPaddle.position.x - 100;
+	camera.position.y = playerPaddle.position.y;
+	camera.position.z = playerPaddle.position.z + 100;
+	
+	//Rotate to face towards the opponent
+	camera.rotation.x = -0.01 * (ball.position.y) * Math.PI/180;
+	camera.rotation.y = -60 * Math.PI/180;
+	camera.rotation.z = -90 * Math.PI/180;
+}
+
+
+//Places ball at centre and starts moving towards the winner
+function Reset(winner) {
+	ball.position.x = 0;
+	ball.position.y = 0;
+	ball.position.z = tableHeight/2;
+	ball.material.color.setHex(0xFF00FF);
+	
+	if(winner == 1){
+		ballDirX = -1;
+	}
+	else {
+		ballDirX = 1;
+	}
+	
+	var randomY = Math.random();
+	if(randomY<0.5){
+		randomY = -1;
+	}
+	else{
+		randomY  = 1;
+	}
+	ballDirY = randomY;
+	
+	var randomZ = Math.random();
+	if(randomZ<0.5){
+		randomZ = -1;
+	}
+	else{
+		randomZ  = 1;
+	}
+	ballDirZ = randomZ;
+}
+
+//Checks score to see if there is a winner, and to see if there is has been a change in score
+function CheckScore() {
+	if(oldplayerScore != playerScore){
+		scene.remove(playerScoreBoard);
+		UpdatePlayerScore(playerScore);
+	}
+	if(oldoppScore != oppScore){
+		scene.remove(oppScoreBoard);
+		UpdateOpponentScore(oppScore);
+	}
+
+	//Player wins
+	if(playerScore>=winScore){
+		ballSpeed = 0;
+		GameOver(1);
+	}
+	//CPU wins
+	else if(oppScore>=winScore){
+		ballSpeed = 0;
+		GameOver(2);
+	}
+}
+
+//makes the paddles invisible and makes their respective mirror CubeCamera's render a frame from their perspective and then display yit on the paddle, making them reflective
+function UpdateReflections() {
+	playerPaddle.visible = false;
+	mirrorCubeCameraPlayer.position.copy( playerPaddle.position );
+	mirrorCubeCameraPlayer.updateCubeMap(renderer,scene);
+	playerPaddle.visible = true;
+	
+	oppPaddle.visible = false;
+	mirrorCubeCameraOpp.position.copy( oppPaddle.position );
+	mirrorCubeCameraOpp.updateCubeMap(renderer,scene);
+	oppPaddle.visible = true;
+}
+
+function UpdateSkyBox() {
+	var tex;
+	if(skyBoxNumber == 2){
+		tex = texInterstellar;
+	}
+	else if(skyBoxNumber == 3){
+		tex = texStorm;
+	}
+	else if(skyBoxNumber == 1){
+		tex = texRedSky;
+	}
+	
+	for (var i = 0; i < 6; i++){
+		materialArray[i].map = tex[i];
+	}
+	skyMaterial = new THREE.MeshFaceMaterial( materialArray );
+	skybox = new THREE.Mesh( new THREE.BoxGeometry( 2048, 2048, 2048 ), skyMaterial );
+}
+
+function loadTextures() {
+	LoadingScreen();
+	
+	var textureURLs = [  
+        redsky + "posx.jpg",
+        redsky + "negx.jpg",
+        redsky + "posy.jpg",
+        redsky + "negy.jpg",  
+        redsky + "posz.jpg",   
+        redsky + "negz.jpg"
+    ];
+	for(var i = 0; i < 6; i++){
+		texRedSky[i] = THREE.ImageUtils.loadTexture(textureURLs[i]);
+		texRedSky.generateMipmaps = false;
+		texRedSky.magFilter = THREE.LinearFilter;
+		texRedSky.minFilter = THREE.LinearFilter;
+	}
+	
+	var textureURLs = [  
+        storm + "posx.jpg",
+        storm + "negx.jpg",
+        storm + "posy.jpg",
+        storm + "negy.jpg",  
+        storm + "posz.jpg",   
+        storm + "negz.jpg"
+    ];
+	for(var i = 0; i < 6; i++){
+		texStorm[i] = THREE.ImageUtils.loadTexture(textureURLs[i]);
+		texStorm.generateMipmaps = false;
+		texStorm.magFilter = THREE.LinearFilter;
+		texStorm.minFilter = THREE.LinearFilter;
+	}
+	
+	var textureURLs = [  
+        interstellar + "posx.jpg",
+        interstellar + "negx.jpg",
+        interstellar + "posy.jpg",
+        interstellar + "negy.jpg",  
+        interstellar + "posz.jpg",   
+        interstellar + "negz.jpg"
+    ];
+	for(var i = 0; i < 6; i++){
+		texInterstellar[i] = THREE.ImageUtils.loadTexture(textureURLs[i]);
+		texInterstellar.generateMipmaps = false;
+		texInterstellar.magFilter = THREE.LinearFilter;
+		texInterstellar.minFilter = THREE.LinearFilter;
+	}
+	
+	texBall = THREE.ImageUtils.loadTexture( "textures/golf_ball.jpg");
+	texBall.generateMipmaps = false;
+	texBall.magFilter = THREE.LinearFilter;
+	texBall.minFilter = THREE.LinearFilter;
+	
+	setTimeout(function(){createWorld();}, 5000);
+}
+
+function LoadingScreen() {
+	canvasLoader = new CanvasLoader("glcanvas");
+	canvasLoader.setColor('#eb38eb'); 
+	canvasLoader.setDiameter(80); 
+	canvasLoader.setDensity(8); 
+	canvasLoader.setRange(1); 
+	canvasLoader.setSpeed(1);
+}
+	
+	
+function $( id ) {
+	return document.getElementById( id );
+}
+	
+
+/*----------------------------- INITIALIZATION ----------------------------------------
+
+/**
+ *  This function is called by the onload event so it will run after the
+ *  page has loaded.  It creates the renderer, canvas, and scene objects,
+ *  calls createWorld() to add objects to the scene, and renders the
+ *  initial view of the scene.  If an error occurs, it is reported.
+ */
+function init() {
+    try {
+        canvas = document.getElementById("glcanvas");
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            alpha: false
+        });
+    }
+    catch (e) {
+        document.getElementById("message").innerHTML="<b>Sorry, an error occurred:<br>" +
+                e + "</b>";
+        return;
+    }
+	loadTextures();
+}
+
+</script>
+</head>
+<body onload="init()">
+
+	<noscript>
+	   <p style="color: #AA0000; font-weight: bold">Sorry, but this page requires JavaScript!</p>
+	</noscript>
+
+	<p style="color:#AA0000; font-weight: bold" id="message">
+	</p>
+
+
+	<div id="canvas-holder" style="float:left; border: thin solid black; margin: auto; align: center; background-color: white">
+	   <canvas width=1200 height=700 id= "glcanvas"></canvas>
+	   <div id = "moveGUI" style="position: absolute; top: 0em; right: 0em;"></div>
+	   <div id = "canvasloader-container" ></div>
+	</div>
+</body>
+</html>
+
+  </body>
+</html>
